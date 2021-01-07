@@ -29,7 +29,7 @@ Open diff_page.html or use navigation buttons on main.html to view changes.
 
 import os
 import json
-
+from pprint import pprint
 from nornir import InitNornir
 from nornir.plugins.tasks.networking import napalm_get
 
@@ -61,7 +61,7 @@ nr = InitNornir(config_file=NORNIR_CONFIG_FILE)
 icon_capability_map = {
     'router': 'router',
     'switch': 'switch',
-    'bridge': 'switch',
+    #'bridge': 'switch',
     'station': 'host'
 }
 
@@ -69,6 +69,7 @@ icon_capability_map = {
 icon_model_map = {
     'CSR1000V': 'router',
     'Nexus': 'switch',
+    'MX960': 'router',
     'IOSXRv': 'router',
     'IOSv': 'switch',
     '2901': 'router',
@@ -150,7 +151,7 @@ def get_host_data(task):
     """Nornir Task for data collection on target hosts."""
     task.run(
         task=napalm_get,
-        getters=['facts', 'lldp_neighbors_detail']
+        getters=['facts', 'lldp_neighbors_detail', 'get_interfaces']
     )
 
 
@@ -183,13 +184,15 @@ def normalize_result(nornir_job_result):
             # neither FQDN nor hostname are set
             device_fqdn = device
         global_facts[device_fqdn] = output[1].result['facts']
+        global_facts[device_fqdn]['get_interfaces'] = output[1].result['get_interfaces']
+        #global_facts[device] = output[1].result['facts']
         global_facts[device_fqdn]['nr_role'] = nr.inventory.hosts[device].get('role', 'undefined')
         global_facts[device_fqdn]['nr_ip'] = nr.inventory.hosts[device].get('hostname', 'n/a')
         global_lldp_data[device_fqdn] = output[1].result['lldp_neighbors_detail']
     return global_lldp_data, global_facts
 
 
-def extract_lldp_details(lldp_data_dict):
+def extract_lldp_details(lldp_data_dict, global_facts):
     """
     LLDP data dict parser.
     Returns set of all the discovered hosts,
@@ -220,9 +223,23 @@ def extract_lldp_details(lldp_data_dict):
                 # Store interconnections in a following format:
                 # ((source_hostname, source_port), (dest_hostname, dest_port))
                 local_end = (host, interface)
+
+                # Junos returning SNMP ifIndex as remote port
+                # For the sake of simplicity, if the 'remote_port' is integer number
+                # try to get correct interface name from the device by matching
+                # interface with description equal to remote_port_description
+                try:
+                    int(neighbor['remote_port'])
+                    remote_interface = get_interface_from_description(global_facts, 
+                    neighbor['remote_system_name'], 
+                    neighbor['remote_port'], 
+                    neighbor['remote_port_description'])
+                except Exception as e:
+                    remote_interface = if_fullname(neighbor['remote_port'])
+
                 remote_end = (
                     neighbor['remote_system_name'],
-                    if_fullname(neighbor['remote_port'])
+                    remote_interface
                 )
                 # Check if the link is not a permutation of already added one
                 # (local_end, remote_end) equals (remote_end, local_end)
@@ -232,11 +249,19 @@ def extract_lldp_details(lldp_data_dict):
                 )
                 if link_is_already_there:
                     continue
-                global_interconnections.append((
-                    (host, interface),
-                    (neighbor['remote_system_name'], if_fullname(neighbor['remote_port']))
-                ))
+                global_interconnections.append( (local_end, remote_end) )
     return [discovered_hosts, global_interconnections, lldp_capabilities_dict]
+
+def get_interface_from_description(global_facts, device, port, description):
+    """
+        Get the interface name from provided description by using global_facts 
+    """
+    for intf_name, intf_data in global_facts[device]['get_interfaces'].items():
+        if intf_data['description'] == description or intf_name == description:
+            return intf_name
+    else:
+        # if match is not found return provided port
+        return port
 
 
 def generate_topology_json(*args):
@@ -471,8 +496,9 @@ def print_diff(diff_result):
 def good_luck_have_fun():
     """Main script logic"""
     get_host_data_result = nr.run(get_host_data)
+    print(get_host_data_result)
     GLOBAL_LLDP_DATA, GLOBAL_FACTS = normalize_result(get_host_data_result)
-    TOPOLOGY_DETAILS = extract_lldp_details(GLOBAL_LLDP_DATA)
+    TOPOLOGY_DETAILS = extract_lldp_details(GLOBAL_LLDP_DATA, GLOBAL_FACTS)
     TOPOLOGY_DETAILS.append(GLOBAL_FACTS)
     TOPOLOGY_DICT = generate_topology_json(*TOPOLOGY_DETAILS)
     CACHED_TOPOLOGY = read_cached_topology()

@@ -1,0 +1,59 @@
+---
+
+CE11:
+    hostname: 127.0.0.1
+    port: 42101
+    groups: 
+        - vmm
+    data:
+        role: cpe
+CE21:
+    hostname: 127.0.0.1
+    port: 42103
+    groups: 
+        - vmm
+    data:
+        role: cpe
+CE31:
+    hostname: 127.0.0.1
+    port: 42105
+    groups: 
+        - vmm
+    data:
+        role: cpe
+P1:
+    hostname: 127.0.0.1
+    port: 42107
+    groups: 
+        - vmm
+    data:
+        role: core-router
+P2:
+    hostname: 127.0.0.1
+    port: 42109
+    groups: 
+        - vmm
+    data:
+        role: core-router
+PE1:
+    hostname: 127.0.0.1
+    port: 42111
+    groups: 
+        - vmm
+    data:
+        role: edge-router
+PE2:
+    hostname: 127.0.0.1
+    port: 42113
+    groups: 
+        - vmm
+    data:
+        role: edge-router
+PE3:
+    hostname: 127.0.0.1
+    port: 42115
+    groups: 
+        - vmm
+    data:
+        role: edge-router
+
